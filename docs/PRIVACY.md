@@ -2,8 +2,11 @@
 
 *Last updated: 8 November 2026*
 
-Nest View is a private Android app that shows live video from your own Nest cameras. It is used by
-one family and is not distributed through any app store.
+Nest View is an Android app that shows live video from your own Nest cameras. It is not
+distributed through any app store: each copy is built and installed by the person who uses it,
+connected to their own Google Cloud and Device Access project. This policy describes the app as
+published at <https://github.com/dzemskov/nest-view>. If your copy was changed, ask whoever changed
+it what it does differently.
 
 ## What the app accesses
 
@@ -17,8 +20,9 @@ rooms, and opens live video streams from them.
   (`accounts.google.com`, `oauth2.googleapis.com`), the Smart Device Management API
   (`smartdevicemanagement.googleapis.com`) and Google's WebRTC connection service
   (`stun.l.google.com`). Video streams come straight from Google to your device.
-- **Nothing goes to the developer.** Nest View has no server of its own, no analytics, no
-  advertising, no crash reporting and no tracking. No data is sold or shared with anyone.
+- **Nothing goes to the app's authors** or to whoever set up your copy. Nest View has no server of
+  its own, no analytics, no advertising, no crash reporting and no tracking. No data is sold or
+  shared with anyone.
 
 ## What is stored on your device
 
@@ -44,4 +48,6 @@ including the Limited Use requirements.
 
 ## Contact
 
-For questions, write to the support email shown on Google's sign-in screen for Nest View.
+For questions about your copy, write to the support email shown on Google's sign-in screen for
+Nest View. For questions about the app itself, open an issue at
+<https://github.com/dzemskov/nest-view/issues>.

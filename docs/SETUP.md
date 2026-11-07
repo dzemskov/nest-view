@@ -13,10 +13,11 @@ US$5 Device Access registration fee, and about 20 minutes.
 3. **Google Auth Platform → Branding / Audience** (the OAuth consent screen):
    - User type **External**, app name "Nest View", your email as support and developer contact.
    - Google only lets you publish once **Branding** also has an **application home page** and an
-     **application privacy policy link**. Host [PRIVACY.md](PRIVACY.md) somewhere public (a
-     public GitHub gist, repo or GitHub Pages site works) and use that address for both. If Google
-     asks for it, add that site's domain (for example `github.com`) under **Authorized domains**.
-     Leave the **logo** empty: uploading one makes Google require a verification review.
+     **application privacy policy link**, both on a site you control. Your own fork of this repo
+     gives you one in a few clicks (see [Your own home page and privacy policy](#your-own-home-page-and-privacy-policy)
+     below). Enter its two addresses here and add `<your-github-name>.github.io` under
+     **Authorized domains**.
+   - Leave the **logo** empty: uploading one makes Google require a verification review.
    - Add your Google account (and your partner's) as **test users**.
    - Then press **Publish app** so the status is **In production**. While the app is in
      "Testing", Google expires the sign-in after **7 days**. An unverified app is fine for
@@ -82,6 +83,24 @@ paste step instead:
 
 4. **Connect Google Home** now opens the browser. When Google lands on google.com, copy that
    page's full address (it contains `code=`) and paste it into the app.
+
+## Your own home page and privacy policy
+
+The `docs` folder of this repo is a small website with a start page and a
+[privacy policy](PRIVACY.md). Publish your own copy of it, so the links on your Google sign-in
+screen are yours and keep working whatever happens to anyone else's:
+
+1. Sign in to GitHub and open <https://github.com/dzemskov/nest-view>. Press **Fork**, then
+   **Create fork**.
+2. In your fork, open **Settings → Pages**. Under **Build and deployment** pick **Deploy from a
+   branch**, branch `master`, folder `/docs`, and press **Save**.
+3. After a minute or two the site is live. Use these on Google's Branding page:
+   - Application home page: `https://<your-github-name>.github.io/nest-view/`
+   - Application privacy policy link: `https://<your-github-name>.github.io/nest-view/PRIVACY.html`
+   - Authorized domain: `<your-github-name>.github.io`
+
+If you change the app so it handles data differently (for example it sends anything somewhere other
+than Google), update `docs/PRIVACY.md` in your fork to match.
 
 ## More phones and tablets
 
