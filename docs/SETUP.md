@@ -12,6 +12,11 @@ US$5 Device Access registration fee, and about 20 minutes.
 2. **APIs & Services → Library**: enable **Smart Device Management API**.
 3. **Google Auth Platform → Branding / Audience** (the OAuth consent screen):
    - User type **External**, app name "Nest View", your email as support and developer contact.
+   - Google only lets you publish once **Branding** also has an **application home page** and an
+     **application privacy policy link**. Host [PRIVACY.md](PRIVACY.md) somewhere public (a
+     public GitHub gist, repo or GitHub Pages site works) and use that address for both. If Google
+     asks for it, add that site's domain (for example `github.com`) under **Authorized domains**.
+     Leave the **logo** empty: uploading one makes Google require a verification review.
    - Add your Google account (and your partner's) as **test users**.
    - Then press **Publish app** so the status is **In production**. While the app is in
      "Testing", Google expires the sign-in after **7 days**. An unverified app is fine for
