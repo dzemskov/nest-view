@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A camera lens inside a 2x2 grid of tiles, with a small crescent moon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Four tiles -->
+    <path android:fillColor="#3A5A80" android:pathData="M30,32h22v16h-22z" />
+    <path android:fillColor="#3A5A80" android:pathData="M56,32h22v16h-22z" />
+    <path android:fillColor="#3A5A80" android:pathData="M30,52h22v16h-22z" />
+    <path android:fillColor="#3A5A80" android:pathData="M56,52h22v16h-22z" />
+    <!-- Lens -->
+    <path android:fillColor="#FFFFFF" android:pathData="M54,50m-14,0a14,14 0,1 1,28 0a14,14 0,1 1,-28 0" />
+    <path android:fillColor="#0E1A2B" android:pathData="M54,50m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
+    <path android:fillColor="#8AB4F8" android:pathData="M54,50m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0" />
+    <!-- Moon -->
+    <path android:fillColor="#FFD27A" android:pathData="M74,72a7,7 0,1 1,-7 -9a5.5,5.5 0,1 0,7 9z" />
+</vector>

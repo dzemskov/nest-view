@@ -1,0 +1,7 @@
+# Copy these keys into local.properties (Android Studio creates that file with sdk.dir).
+# See docs/SETUP.md.
+SDM_PROJECT_ID=
+OAUTH_CLIENT_ID=
+# Only for a Web OAuth client (manual paste flow):
+# OAUTH_CLIENT_SECRET=
+# OAUTH_REDIRECT_URI=https://www.google.com
