@@ -43,6 +43,11 @@ a tablet on a stand: it opens straight into the cameras and keeps the screen on.
   shortcuts, layout editor, sound history.
 - **M3, polish**: event timeline, motion zones, add a device by QR code, snapshots, screen-saver
   mode for the tablet stand, fold awareness, thermostat temperature, Nest cloud events.
+- **M4, later**: "Magnify motion" on a focused, zoomed tile, which makes small movements such
+  as a blanket rising easier to see (Eulerian / phase-based video magnification on the GPU).
+  First test it offline on recorded clips, by day and at night with infrared, and build it only
+  if breathing clearly stands out from compression and night-vision noise. It is a way to look
+  closer, not a breathing monitor: no breathing rate, no "breathing OK" sign, no alarm.
 
 ## Building
 
