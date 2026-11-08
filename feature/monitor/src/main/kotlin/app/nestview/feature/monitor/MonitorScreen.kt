@@ -1,7 +1,12 @@
 package app.nestview.feature.monitor
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateRectAsState
 import androidx.compose.animation.fadeIn
@@ -50,19 +55,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.nestview.core.designsystem.MonitorColors
 import app.nestview.core.designsystem.OverlayIconButton
 import app.nestview.core.model.LayoutSpec
+import app.nestview.feature.monitor.background.ListeningService
 import app.nestview.feature.monitor.layout.LayoutEngine
 import kotlinx.coroutines.delay
 import org.webrtc.EglBase
@@ -85,6 +94,11 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
     BackHandler(enabled = state.focusedId != null) { viewModel.unfocus() }
 
     val hasTiles = state.tiles.isNotEmpty()
+    BackgroundListening(
+        enabled = state.backgroundListening && hasTiles,
+        askForNotifications = !state.askedForNotifications,
+        onAskedForNotifications = viewModel::markAskedForNotifications,
+    )
     LaunchedEffect(state.controlsVisible, interactions, menuFor, hasTiles) {
         if (state.controlsVisible && menuFor == null && hasTiles) {
             delay(CONTROLS_TIMEOUT_MS)
@@ -320,6 +334,28 @@ private fun EmptyMonitor(onOpenSettings: () -> Unit) {
             modifier = Modifier.padding(top = 8.dp),
         )
         Button(onClick = onOpenSettings, modifier = Modifier.padding(top = 24.dp)) { Text("Open settings") }
+    }
+}
+
+/**
+ * Starts background listening whenever the monitor is visible (Android allows starting it only
+ * from the foreground), and asks once for notifications so its Mute and Stop buttons can show.
+ */
+@Composable
+private fun BackgroundListening(enabled: Boolean, askForNotifications: Boolean, onAskedForNotifications: () -> Unit) {
+    val context = LocalContext.current
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LifecycleStartEffect(enabled) {
+        if (enabled) ListeningService.start(context)
+        onStopOrDispose { }
+    }
+    LaunchedEffect(enabled, askForNotifications) {
+        if (enabled && askForNotifications && Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            onAskedForNotifications()
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 }
 

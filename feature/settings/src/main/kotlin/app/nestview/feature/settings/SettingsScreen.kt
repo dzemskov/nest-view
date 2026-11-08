@@ -1,5 +1,11 @@
 package app.nestview.feature.settings
 
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -37,8 +43,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.core.app.NotificationManagerCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.nestview.core.sdm.auth.AuthStatus
 
@@ -95,6 +104,15 @@ fun SettingsScreen(
                         Text("Refresh camera list from Google")
                     }
                 }
+            }
+
+            item { HorizontalDivider(Modifier.widthIn(max = 720.dp)) }
+            item { SectionHeader("Background") }
+            item {
+                BackgroundSection(
+                    enabled = state.backgroundListening,
+                    onEnabledChange = viewModel::setBackgroundListening,
+                )
             }
 
             item { HorizontalDivider(Modifier.widthIn(max = 720.dp)) }
@@ -171,6 +189,63 @@ fun SettingsScreen(
             dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
         )
     }
+}
+
+/** The background-listening switch, plus the two Android settings that keep it working overnight. */
+@Composable
+private fun BackgroundSection(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+    val context = LocalContext.current
+    var unrestricted by remember { mutableStateOf(true) }
+    var notificationsOn by remember { mutableStateOf(true) }
+    // Re-checked on return from Android's settings screens.
+    LifecycleResumeEffect(Unit) {
+        unrestricted = context.isIgnoringBatteryOptimizations()
+        notificationsOn = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        onPauseOrDispose { }
+    }
+    Column(Modifier.widthIn(max = 720.dp)) {
+        ListItem(
+            headlineContent = { Text("Keep listening in the background") },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            supportingContent = {
+                Text("Sound keeps playing with the screen off or another app open. A notification shows while it listens, with Mute and Stop.")
+            },
+            trailingContent = { Switch(checked = enabled, onCheckedChange = onEnabledChange) },
+            modifier = Modifier.clickable { onEnabledChange(!enabled) },
+        )
+        if (enabled && !unrestricted) {
+            ListItem(
+                headlineContent = { Text("Let it run all night") },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                supportingContent = { Text("Android may stop Nest View to save battery. Tap to let it keep running.") },
+                modifier = Modifier.clickable { context.requestUnrestrictedBattery() },
+            )
+        }
+        if (enabled && !notificationsOn) {
+            ListItem(
+                headlineContent = { Text("Show the listening notification") },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                supportingContent = { Text("Notifications are off, so Mute and Stop don't show when the app is in the background.") },
+                modifier = Modifier.clickable { context.openNotificationSettings() },
+            )
+        }
+    }
+}
+
+private fun Context.isIgnoringBatteryOptimizations(): Boolean =
+    getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+
+@SuppressLint("BatteryLife") // a personal baby monitor has to run all night
+private fun Context.requestUnrestrictedBattery() {
+    val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+    runCatching { startActivity(direct) }.onFailure {
+        runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+    }
+}
+
+private fun Context.openNotificationSettings() {
+    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+    runCatching { startActivity(intent) }
 }
 
 @Composable

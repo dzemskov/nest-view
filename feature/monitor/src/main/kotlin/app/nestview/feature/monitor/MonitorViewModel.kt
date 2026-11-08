@@ -10,8 +10,8 @@ import app.nestview.core.model.ScaleMode
 import app.nestview.core.model.VideoSize
 import app.nestview.core.model.ZoomWindow
 import app.nestview.core.streaming.CameraFeed
-import app.nestview.core.streaming.FeedLease
 import app.nestview.core.streaming.StreamingEngine
+import app.nestview.feature.monitor.session.MonitorSession
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -53,27 +52,29 @@ data class MonitorUiState(
     val controlsVisible: Boolean = true,
     val allMuted: Boolean = false,
     val isDemo: Boolean = false,
+    val backgroundListening: Boolean = false,
+    val askedForNotifications: Boolean = true,
 )
 
 /**
- * Holds stream leases for the cameras of the current view (activity-scoped, so streams survive
- * rotation and visits to Settings) and turns stored preferences into tile state and audio gains.
+ * Keeps the [MonitorSession] streaming while the monitor exists (activity-scoped, so streams survive
+ * rotation and visits to Settings) and turns stored preferences into tile state.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class MonitorViewModel @Inject constructor(
     private val repository: MonitorRepository,
-    private val engine: StreamingEngine,
+    private val session: MonitorSession,
+    engine: StreamingEngine,
 ) : ViewModel() {
 
     val eglContext: EglBase.Context = engine.eglContext
 
-    private val leases = mutableMapOf<String, FeedLease>()
-    private val feeds = MutableStateFlow<Map<String, CameraFeed>>(emptyMap())
+    private val screenHold = session.holdForScreen()
+    private val feeds = session.feeds
     private val focusedId = MutableStateFlow<String?>(null)
     private val zooms = MutableStateFlow<Map<String, ZoomWindow>>(emptyMap())
     private val controlsVisible = MutableStateFlow(true)
-    private val volumePreview = MutableStateFlow<Pair<String, Float>?>(null)
 
     private val aspects: Flow<Map<String, Float>> = feeds.flatMapLatest { map ->
         if (map.isEmpty()) {
@@ -93,21 +94,13 @@ class MonitorViewModel @Inject constructor(
     ) { (state, feedMap, aspectMap), ui -> build(state, feedMap, aspectMap, ui) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, MonitorUiState())
 
-    init {
-        viewModelScope.launch {
-            repository.state
-                .map { it.selectedView?.cameraIds.orEmpty() }
-                .distinctUntilChanged()
-                .collect { syncLeases(it) }
-        }
-        viewModelScope.launch {
-            combine(repository.state, feeds, volumePreview) { s, f, p -> Triple(s, f, p) }
-                .collect { (state, feedMap, preview) -> applyGains(state, feedMap, preview) }
-        }
-    }
-
     private fun build(state: AppState, feedMap: Map<String, CameraFeed>, aspectMap: Map<String, Float>, ui: Ui): MonitorUiState {
-        val view = state.selectedView ?: return MonitorUiState(loading = false, isDemo = state.demoMode)
+        val view = state.selectedView ?: return MonitorUiState(
+            loading = false,
+            isDemo = state.demoMode,
+            backgroundListening = state.settings.backgroundListening,
+            askedForNotifications = state.settings.askedForNotifications,
+        )
         val tiles = view.cameraIds.mapNotNull { id ->
             val feed = feedMap[id] ?: return@mapNotNull null
             val prefs = state.prefsFor(id)
@@ -135,22 +128,9 @@ class MonitorViewModel @Inject constructor(
             controlsVisible = ui.controls,
             allMuted = view.audio.allMuted,
             isDemo = state.demoMode,
+            backgroundListening = state.settings.backgroundListening,
+            askedForNotifications = state.settings.askedForNotifications,
         )
-    }
-
-    private fun syncLeases(ids: List<String>) {
-        (leases.keys - ids.toSet()).forEach { leases.remove(it)?.close() }
-        ids.forEach { id -> if (id !in leases) leases[id] = engine.acquire(id) }
-        feeds.value = leases.mapValues { it.value.feed }
-    }
-
-    private fun applyGains(state: AppState, feedMap: Map<String, CameraFeed>, preview: Pair<String, Float>?) {
-        val view = state.selectedView ?: return
-        for (id in view.cameraIds) {
-            val feed = feedMap[id] ?: continue
-            val volume = if (preview?.first == id) preview.second else state.prefsFor(id).volume
-            feed.setAudioGain(view.audio.gainFor(id, volume))
-        }
     }
 
     fun setControlsVisible(visible: Boolean) {
@@ -172,15 +152,18 @@ class MonitorViewModel @Inject constructor(
     fun toggleAllMuted() = editAudio { mix, _ -> mix.toggleAllMuted() }
 
     /** Applies a volume live while the slider moves, without writing to storage. */
-    fun previewVolume(cameraId: String, volume: Float) {
-        volumePreview.value = cameraId to volume
-    }
+    fun previewVolume(cameraId: String, volume: Float) = session.previewVolume(cameraId, volume)
 
     fun commitVolume(cameraId: String, volume: Float) {
         viewModelScope.launch {
             repository.updateCameraPrefs(cameraId) { it.copy(volume = volume.coerceIn(0f, AudioMix.MAX_VOLUME)) }
-            volumePreview.value = null
+            session.previewVolume(cameraId, null)
         }
+    }
+
+    /** Remembers that the app asked for notifications, so it doesn't ask on every start. */
+    fun markAskedForNotifications() {
+        viewModelScope.launch { repository.updateSettings { it.copy(askedForNotifications = true) } }
     }
 
     fun setZoom(cameraId: String, zoom: ZoomWindow) = zooms.update { it + (cameraId to zoom) }
@@ -233,7 +216,6 @@ class MonitorViewModel @Inject constructor(
     }
 
     override fun onCleared() {
-        leases.values.forEach { it.close() }
-        leases.clear()
+        screenHold.close()
     }
 }

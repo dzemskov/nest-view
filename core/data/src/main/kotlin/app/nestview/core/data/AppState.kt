@@ -5,6 +5,15 @@ import app.nestview.core.model.CameraPrefs
 import app.nestview.core.model.MonitorView
 import kotlinx.serialization.Serializable
 
+/** App-wide choices that survive switching between demo and real cameras. */
+@Serializable
+data class AppSettings(
+    /** Keep streams and sound running with the screen off or another app in front. */
+    val backgroundListening: Boolean = true,
+    /** Android only lets an app ask for notifications a couple of times, so ask once, on purpose. */
+    val askedForNotifications: Boolean = false,
+)
+
 /** Everything the app remembers, stored as one JSON document. */
 @Serializable
 data class AppState(
@@ -16,6 +25,7 @@ data class AppState(
     val hiddenCameraIds: Set<String> = emptySet(),
     val views: List<MonitorView> = emptyList(),
     val selectedViewId: String? = null,
+    val settings: AppSettings = AppSettings(),
 ) {
     val selectedView: MonitorView?
         get() = views.firstOrNull { it.id == selectedViewId } ?: views.firstOrNull()

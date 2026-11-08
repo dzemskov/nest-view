@@ -58,6 +58,8 @@ class MonitorRepository @Inject constructor(private val store: DataStore<AppStat
     }
 
     suspend fun setCameraShown(cameraId: String, shown: Boolean) = update { AppStateOps.setCameraShown(it, cameraId, shown) }
+
+    suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = update { s -> s.copy(settings = transform(s.settings)) }
 }
 
 /** Where cameras come from: Google (real cameras) or the built-in demo. */
@@ -72,13 +74,13 @@ class CameraRepository @Inject constructor(
         }
 
     suspend fun enableDemo() = monitor.update { s ->
-        AppStateOps.withCameras(AppState(demoMode = true), DemoCameras.all).copy(
+        AppStateOps.withCameras(AppState(demoMode = true, settings = s.settings), DemoCameras.all).copy(
             cameraPrefs = s.cameraPrefs.filterKeys { it.startsWith(DemoCameras.ID_PREFIX) },
         )
     }
 
     /** Leaves demo mode; real cameras appear after the next refresh from Google. */
-    suspend fun disableDemo() = monitor.update { AppState(demoMode = false) }
+    suspend fun disableDemo() = monitor.update { AppState(demoMode = false, settings = it.settings) }
 
     fun demoCameras(): List<CameraInfo> = DemoCameras.all
 }

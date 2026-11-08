@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.nestview.core.designsystem.MonitorColors
 import app.nestview.core.designsystem.OverlayIconButton
@@ -169,9 +170,10 @@ private fun VideoSurface(feed: CameraFeed, eglContext: EglBase.Context, region: 
     val context = LocalContext.current
     val view = remember { ZoomableVideoView(context).apply { init(eglContext) } }
     DisposableEffect(view) { onDispose { view.release() } }
-    DisposableEffect(feed, view) {
+    // Draws only while the app is visible; in the background the stream keeps running for sound.
+    LifecycleStartEffect(feed, view) {
         feed.addVideoSink(view)
-        onDispose { feed.removeVideoSink(view) }
+        onStopOrDispose { feed.removeVideoSink(view) }
     }
     AndroidView(factory = { view }, update = { it.setRegion(region) }, modifier = modifier)
 }

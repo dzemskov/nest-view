@@ -6,7 +6,7 @@ a tablet on a stand: it opens straight into the cameras and keeps the screen on.
 
 > Not a medical device. It doesn't monitor breathing and doesn't replace checking on your child.
 
-## What works now (milestone 1)
+## What works now (milestone 1, and the start of milestone 2)
 
 - **Monitor screen**: every camera of the view, edge to edge, system bars hidden, screen kept on.
   Works in any size and orientation. Rotation and visits to Settings never reconnect a stream.
@@ -31,16 +31,20 @@ a tablet on a stand: it opens straight into the cameras and keeps the screen on.
 - **Instant start**: each camera's last snapshot is shown (grey, "Connecting…") until it's live.
 - **Demo mode**: four simulated cameras with sound and occasional crying, to try the app without
   Nest cameras.
+- **Background listening**: sound keeps playing with the screen off or another app open. A
+  "Listening" notification names the cameras and has *Mute all* and *Stop*; opening the app
+  starts listening again. It can be turned off in Settings, which also points to Android's
+  battery setting so it keeps running all night. While the app is hidden, video isn't drawn.
 - **Setup and settings**: Google sign-in through the Nest permissions page, camera discovery,
   rename/hide cameras, sign out.
 
 ## Next milestones
 
-- **M2, baby-monitor smarts**: background listening (foreground service, screen off), picture in
-  picture, night mode with dim screen, clock and a black "nap" screen that wakes on sound, sound
-  alerts with calibration, on-device cry detection (YAMNet), smart volume (noise gate for
-  white-noise machines), connection-lost and low-battery alarms, touch lock, several views with
-  shortcuts, layout editor, sound history.
+- **M2, baby-monitor smarts**: ~~background listening~~ (done), picture in picture, night mode
+  with dim screen, clock and a black "nap" screen that wakes on sound, sound alerts with
+  calibration, on-device cry detection (YAMNet), smart volume (noise gate for white-noise
+  machines), connection-lost and low-battery alarms, touch lock, several views with shortcuts,
+  layout editor, sound history.
 - **M3, polish**: event timeline, motion zones, add a device by QR code, snapshots, screen-saver
   mode for the tablet stand, fold awareness, thermostat temperature, Nest cloud events.
 - **M4, later**: "Magnify motion" on a focused, zoomed tile, which makes small movements such
