@@ -1,5 +1,6 @@
 package app.nestview.feature.monitor
 
+import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.nestview.core.data.AppState
@@ -9,10 +10,14 @@ import app.nestview.core.model.LayoutSpec
 import app.nestview.core.model.ScaleMode
 import app.nestview.core.model.VideoSize
 import app.nestview.core.model.ZoomWindow
+import app.nestview.core.model.MonitorView
 import app.nestview.core.streaming.CameraFeed
+import app.nestview.core.streaming.LastFrameCache
 import app.nestview.core.streaming.StreamingEngine
+import app.nestview.feature.monitor.layout.Rearrange
 import app.nestview.feature.monitor.session.MonitorSession
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,6 +30,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.webrtc.EglBase
 import javax.inject.Inject
 
@@ -41,6 +47,12 @@ data class TileState(
     val aspect: Float,
 )
 
+/** A known camera that isn't on the current view, offered by "Add camera". */
+data class AddableCamera(val cameraId: String, val name: String, val room: String?)
+
+/** What "Undo" puts back after a camera is taken off a view. */
+data class RemovedCamera(val viewId: String, val cameraId: String, val name: String, val index: Int, val audio: AudioMix)
+
 data class MonitorUiState(
     val loading: Boolean = true,
     val viewId: String? = null,
@@ -54,6 +66,7 @@ data class MonitorUiState(
     val isDemo: Boolean = false,
     val backgroundListening: Boolean = false,
     val askedForNotifications: Boolean = true,
+    val addable: List<AddableCamera> = emptyList(),
 )
 
 /**
@@ -65,6 +78,7 @@ data class MonitorUiState(
 class MonitorViewModel @Inject constructor(
     private val repository: MonitorRepository,
     private val session: MonitorSession,
+    private val frameCache: LastFrameCache,
     engine: StreamingEngine,
 ) : ViewModel() {
 
@@ -100,6 +114,7 @@ class MonitorViewModel @Inject constructor(
             isDemo = state.demoMode,
             backgroundListening = state.settings.backgroundListening,
             askedForNotifications = state.settings.askedForNotifications,
+            addable = state.addableTo(null),
         )
         val tiles = view.cameraIds.mapNotNull { id ->
             val feed = feedMap[id] ?: return@mapNotNull null
@@ -118,7 +133,8 @@ class MonitorViewModel @Inject constructor(
             )
         }
         return MonitorUiState(
-            loading = false,
+            // Streams are still being set up: show nothing rather than "No cameras".
+            loading = tiles.isEmpty() && view.cameraIds.isNotEmpty(),
             viewId = view.id,
             viewName = view.name,
             tiles = tiles,
@@ -130,8 +146,13 @@ class MonitorViewModel @Inject constructor(
             isDemo = state.demoMode,
             backgroundListening = state.settings.backgroundListening,
             askedForNotifications = state.settings.askedForNotifications,
+            addable = state.addableTo(view),
         )
     }
+
+    private fun AppState.addableTo(view: MonitorView?): List<AddableCamera> =
+        cameras.filter { view == null || it.id !in view.cameraIds }
+            .map { AddableCamera(it.id, displayName(it.id), it.room) }
 
     fun setControlsVisible(visible: Boolean) {
         controlsVisible.value = visible
@@ -200,6 +221,50 @@ class MonitorViewModel @Inject constructor(
     /** Uses the one-large-plus-small layout with this camera as the large tile. */
     fun makePrimary(cameraId: String, landscape: Boolean) = setLayout(landscape, LayoutSpec.Focus(cameraId))
 
+    /** Adds a camera to the end of the current view. */
+    fun addCamera(cameraId: String) {
+        viewModelScope.launch {
+            val viewId = repository.current().selectedView?.id ?: return@launch
+            repository.addToView(viewId, cameraId)
+        }
+    }
+
+    /** Takes a camera off the current view and hands back what "Undo" needs. */
+    suspend fun removeCamera(cameraId: String): RemovedCamera? {
+        val state = repository.current()
+        val view = state.selectedView ?: return null
+        val index = view.cameraIds.indexOf(cameraId).takeIf { it >= 0 } ?: return null
+        if (focusedId.value == cameraId) focusedId.value = null
+        repository.removeFromView(view.id, cameraId)
+        return RemovedCamera(view.id, cameraId, state.displayName(cameraId), index, view.audio)
+    }
+
+    fun undoRemove(removed: RemovedCamera) {
+        viewModelScope.launch { repository.addToView(removed.viewId, removed.cameraId, removed.index, removed.audio) }
+    }
+
+    /**
+     * Saves the order tiles were dragged into ([order] is the on-screen order). In "one large +
+     * small" the first camera becomes the large one.
+     */
+    fun reorder(order: List<String>, landscape: Boolean) = editView { view ->
+        val spec = view.layoutFor(landscape)
+        val arranged = view.copy(cameraIds = order.filter { it in view.cameraIds } + view.cameraIds.filter { it !in order })
+        val newSpec = Rearrange.specFor(spec, arranged.cameraIds)
+        if (landscape) arranged.copy(landscape = newSpec) else arranged.copy(portrait = newSpec)
+    }
+
+    /** Moves a camera one place earlier or later (accessibility actions). */
+    fun moveBy(cameraId: String, delta: Int, landscape: Boolean) {
+        val state = uiState.value
+        val ids = state.tiles.map { it.cameraId }
+        val order = Rearrange.displayOrder(if (landscape) state.landscapeLayout else state.portraitLayout, ids)
+        reorder(Rearrange.moveBy(order, cameraId, delta), landscape)
+    }
+
+    /** The last saved picture of a camera, for the "Add camera" list. */
+    suspend fun snapshot(cameraId: String): Bitmap? = withContext(Dispatchers.IO) { frameCache.load(cameraId) }
+
     fun reconnect(cameraId: String) {
         feeds.value[cameraId]?.reconnect()
     }
@@ -208,7 +273,7 @@ class MonitorViewModel @Inject constructor(
         view.copy(audio = transform(view.audio, view.cameraIds))
     }
 
-    private fun editView(transform: (app.nestview.core.model.MonitorView) -> app.nestview.core.model.MonitorView) {
+    private fun editView(transform: (MonitorView) -> MonitorView) {
         viewModelScope.launch {
             val viewId = repository.current().selectedView?.id ?: return@launch
             repository.updateView(viewId, transform)

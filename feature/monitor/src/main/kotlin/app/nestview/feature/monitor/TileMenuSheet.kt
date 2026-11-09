@@ -13,6 +13,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -52,6 +53,7 @@ internal fun TileMenuSheet(
     onResetZoom: () -> Unit,
     onForgetPinnedZoom: () -> Unit,
     onMakePrimary: () -> Unit,
+    onRemove: () -> Unit,
     onReconnect: () -> Unit,
 ) {
     val health by tile.feed.health.collectAsStateWithLifecycle()
@@ -122,7 +124,21 @@ internal fun TileMenuSheet(
                 OutlinedButton(onClick = onResetZoom, enabled = tile.zoom.isZoomed) { Text("Zoom out") }
                 if (tile.pinnedZoom != null) TextButton(onClick = onForgetPinnedZoom) { Text("Forget saved zoom") }
             }
-            TextButton(onClick = onMakePrimary) { Text("Show this camera large") }
+
+            HorizontalDivider()
+            SectionTitle("On this view")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onMakePrimary) { Text("Show this camera large") }
+                OutlinedButton(
+                    onClick = onRemove,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Remove from view") }
+            }
+            Text(
+                "Tip: hold a camera and drag it to move it. Drop it on “Remove from view” at the top to take it off.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             HorizontalDivider()
             SectionTitle("Connection")

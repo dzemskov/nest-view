@@ -3,6 +3,7 @@ package app.nestview.core.data
 import androidx.datastore.core.CorruptionException
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.Serializer
+import app.nestview.core.model.AudioMix
 import app.nestview.core.model.CameraInfo
 import app.nestview.core.model.CameraPrefs
 import app.nestview.core.model.DemoCameras
@@ -58,6 +59,11 @@ class MonitorRepository @Inject constructor(private val store: DataStore<AppStat
     }
 
     suspend fun setCameraShown(cameraId: String, shown: Boolean) = update { AppStateOps.setCameraShown(it, cameraId, shown) }
+
+    suspend fun addToView(viewId: String, cameraId: String, index: Int? = null, audio: AudioMix? = null) =
+        update { AppStateOps.addToView(it, viewId, cameraId, index, audio) }
+
+    suspend fun removeFromView(viewId: String, cameraId: String) = update { AppStateOps.removeFromView(it, viewId, cameraId) }
 
     suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = update { s -> s.copy(settings = transform(s.settings)) }
 }

@@ -14,7 +14,12 @@ a tablet on a stand: it opens straight into the cameras and keeps the screen on.
   in landscape, stacked in portrait, 2×2 for four…). Also: grid 2/3 columns, one large + small,
   side by side, stacked; saved separately for portrait and landscape.
 - **Gestures**: tap shows/hides controls (they hide after 4 s), double-tap focuses a camera full
-  screen, long-press opens the camera menu, pinch zooms, drag pans.
+  screen, hold opens the camera menu, pinch zooms, drag pans.
+- **Arrange cameras on the monitor**, no settings screen needed: hold a camera until it lifts and
+  drag it; the others make room (dropping it on the large tile makes it the large one). Drop it
+  on *Remove from view* at the top to take it off, with *Undo*. The **+** button (shown when a
+  camera is missing) adds one back. The camera menu has *Remove from view* too, and screen
+  readers get Move earlier / Move later / Remove actions.
 - **Sharp zoom**: the decoded frame is cropped on the GPU, so zoom stays sharp up to the camera's
   resolution. **Save this zoom** keeps a crop (for example the crib) for every start.
 - **Mixed audio**: all cameras play together; per camera mute, volume 0–300 % and *listen to this

@@ -1,5 +1,6 @@
 package app.nestview.core.data
 
+import app.nestview.core.model.AudioMix
 import app.nestview.core.model.CameraInfo
 import app.nestview.core.model.CameraPrefs
 import app.nestview.core.model.MonitorView
@@ -65,6 +66,41 @@ object AppStateOps {
             cameraPrefs = state.cameraPrefs.filterKeys { it in idSet },
             hiddenCameraIds = state.hiddenCameraIds.filterTo(mutableSetOf()) { it in idSet },
         )
+    }
+
+    /**
+     * Puts a camera on a view, at [index] or at the end. [audio] restores a view's earlier audio
+     * mix (used by undo). Adding to "All cameras" also lets refreshes keep it there.
+     */
+    fun addToView(state: AppState, viewId: String, cameraId: String, index: Int? = null, audio: AudioMix? = null): AppState {
+        val views = state.views.map { view ->
+            if (view.id != viewId || cameraId in view.cameraIds) return@map view
+            val ids = view.cameraIds.toMutableList().apply { add((index ?: size).coerceIn(0, size), cameraId) }
+            view.copy(cameraIds = ids, audio = (audio ?: view.audio).retainOnly(ids))
+        }
+        val hidden = if (viewId == MonitorView.ALL_CAMERAS_ID) state.hiddenCameraIds - cameraId else state.hiddenCameraIds
+        return state.copy(views = views, hiddenCameraIds = hidden)
+    }
+
+    /** Takes a camera off a view. Removed from "All cameras", it stays off when the camera list refreshes. */
+    fun removeFromView(state: AppState, viewId: String, cameraId: String): AppState {
+        val views = state.views.map { view ->
+            if (view.id != viewId) return@map view
+            val ids = view.cameraIds - cameraId
+            view.copy(cameraIds = ids, audio = view.audio.retainOnly(ids))
+        }
+        val hidden = if (viewId == MonitorView.ALL_CAMERAS_ID) state.hiddenCameraIds + cameraId else state.hiddenCameraIds
+        return state.copy(views = views, hiddenCameraIds = hidden)
+    }
+
+    /** Orders a view's cameras as in [order]; cameras not mentioned keep their order at the end. */
+    fun reorderView(state: AppState, viewId: String, order: List<String>): AppState {
+        val views = state.views.map { view ->
+            if (view.id != viewId) return@map view
+            val ids = order.filter { it in view.cameraIds }.distinct()
+            view.copy(cameraIds = ids + view.cameraIds.filter { it !in ids })
+        }
+        return state.copy(views = views)
     }
 
     fun setCameraShown(state: AppState, cameraId: String, shown: Boolean): AppState {

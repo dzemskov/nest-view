@@ -41,4 +41,49 @@ class AppStateOpsTest {
         val shown = AppStateOps.setCameraShown(refreshed, "b", shown = true)
         assertEquals(listOf("a", "b"), shown.selectedView!!.cameraIds)
     }
+
+    @Test
+    fun removeFromAllCamerasStaysRemovedAfterRefresh() {
+        val start = AppStateOps.withCameras(AppState(), listOf(cam("a"), cam("b"), cam("c")))
+        val removed = AppStateOps.removeFromView(start, MonitorView.ALL_CAMERAS_ID, "b")
+        assertEquals(listOf("a", "c"), removed.selectedView!!.cameraIds)
+        val refreshed = AppStateOps.withCameras(removed, listOf(cam("a"), cam("b"), cam("c")))
+        assertEquals(listOf("a", "c"), refreshed.selectedView!!.cameraIds)
+    }
+
+    @Test
+    fun addPutsCameraAtEndAndRefreshKeepsIt() {
+        val start = AppStateOps.withCameras(AppState(), listOf(cam("a"), cam("b")))
+        val removed = AppStateOps.removeFromView(start, MonitorView.ALL_CAMERAS_ID, "a")
+        val added = AppStateOps.addToView(removed, MonitorView.ALL_CAMERAS_ID, "a")
+        assertEquals(listOf("b", "a"), added.selectedView!!.cameraIds)
+        assertEquals(emptySet<String>(), added.hiddenCameraIds)
+        val refreshed = AppStateOps.withCameras(added, listOf(cam("a"), cam("b")))
+        assertEquals(listOf("b", "a"), refreshed.selectedView!!.cameraIds)
+    }
+
+    @Test
+    fun undoRestoresPositionAndAudio() {
+        val start = AppStateOps.withCameras(AppState(), listOf(cam("a"), cam("b"), cam("c")))
+        val withAudio = start.copy(views = start.views.map { it.copy(audio = AudioMix(muted = setOf("b"), soloId = "b")) })
+        val before = withAudio.selectedView!!
+        val removed = AppStateOps.removeFromView(withAudio, before.id, "b")
+        assertEquals(AudioMix(), removed.selectedView!!.audio)
+        val restored = AppStateOps.addToView(removed, before.id, "b", index = 1, audio = before.audio)
+        assertEquals(listOf("a", "b", "c"), restored.selectedView!!.cameraIds)
+        assertEquals(before.audio, restored.selectedView!!.audio)
+    }
+
+    @Test
+    fun addingTwiceDoesNothing() {
+        val start = AppStateOps.withCameras(AppState(), listOf(cam("a"), cam("b")))
+        assertEquals(start, AppStateOps.addToView(start, MonitorView.ALL_CAMERAS_ID, "a"))
+    }
+
+    @Test
+    fun reorderKeepsUnmentionedCamerasAndIgnoresStrangers() {
+        val start = AppStateOps.withCameras(AppState(), listOf(cam("a"), cam("b"), cam("c"), cam("d")))
+        val s = AppStateOps.reorderView(start, MonitorView.ALL_CAMERAS_ID, listOf("c", "x", "a"))
+        assertEquals(listOf("c", "a", "b", "d"), s.selectedView!!.cameraIds)
+    }
 }

@@ -7,6 +7,40 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.traversalIndex
+import androidx.compose.ui.zIndex
+import app.nestview.core.model.ZoomWindow
+import app.nestview.feature.monitor.layout.Rearrange
+import kotlinx.coroutines.launch
+import kotlin.math.min
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateRectAsState
 import androidx.compose.animation.fadeIn
@@ -81,13 +115,31 @@ private const val CONTROLS_TIMEOUT_MS = 4_000L
 
 /**
  * The main screen: every camera of the current view, full screen, with the display kept on.
- * Tap shows or hides the controls, double-tap focuses a camera, long-press opens its menu.
+ * Tap shows or hides the controls, double-tap focuses a camera, hold opens its menu, and hold and
+ * drag moves it (or takes it off the view).
  */
 @Composable
 fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var menuFor by remember { mutableStateOf<String?>(null) }
+    var adding by remember { mutableStateOf(false) }
     var interactions by remember { mutableIntStateOf(0) }
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // Taking a camera off the view is one drag away, so it's always undoable.
+    fun removeCamera(id: String) {
+        scope.launch {
+            val removed = viewModel.removeCamera(id) ?: return@launch
+            snackbar.currentSnackbarData?.dismiss()
+            val result = snackbar.showSnackbar(
+                message = "${removed.name} removed from this view",
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Long,
+            )
+            if (result == SnackbarResult.ActionPerformed) viewModel.undoRemove(removed)
+        }
+    }
 
     KeepScreenOn()
     ImmersiveMode()
@@ -99,8 +151,8 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
         askForNotifications = !state.askedForNotifications,
         onAskedForNotifications = viewModel::markAskedForNotifications,
     )
-    LaunchedEffect(state.controlsVisible, interactions, menuFor, hasTiles) {
-        if (state.controlsVisible && menuFor == null && hasTiles) {
+    LaunchedEffect(state.controlsVisible, interactions, menuFor, adding, hasTiles) {
+        if (state.controlsVisible && menuFor == null && !adding && hasTiles) {
             delay(CONTROLS_TIMEOUT_MS)
             viewModel.setControlsVisible(false)
         }
@@ -110,7 +162,11 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
         val landscape = constraints.maxWidth >= constraints.maxHeight
         when {
             state.loading -> Unit
-            state.tiles.isEmpty() -> EmptyMonitor(onOpenSettings)
+            state.tiles.isEmpty() -> EmptyMonitor(
+                canAdd = state.addable.isNotEmpty(),
+                onAddCamera = { adding = true },
+                onOpenSettings = onOpenSettings,
+            )
             else -> TileGrid(
                 state = state,
                 landscape = landscape,
@@ -120,7 +176,11 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
                     interactions++
                 },
                 onDoubleTap = viewModel::focus,
-                onLongPress = { menuFor = it },
+                onOpenMenu = { menuFor = it },
+                onLifted = { viewModel.setControlsVisible(false) },
+                onReorder = { viewModel.reorder(it, landscape) },
+                onRemove = ::removeCamera,
+                onMoveBy = { id, delta -> viewModel.moveBy(id, delta, landscape) },
                 onZoomCommitted = viewModel::setZoom,
                 onToggleMute = {
                     viewModel.toggleMute(it)
@@ -142,7 +202,29 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
                 interactions++
             },
             onUnfocus = viewModel::unfocus,
+            onAddCamera = { adding = true },
         )
+
+        SnackbarHost(
+            snackbar,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(bottom = if (state.controlsVisible) 88.dp else 8.dp),
+        )
+
+        if (adding) {
+            AddCameraSheet(
+                viewName = state.viewName,
+                cameras = state.addable,
+                snapshot = viewModel::snapshot,
+                onAdd = {
+                    viewModel.addCamera(it)
+                    adding = false
+                },
+                onDismiss = { adding = false },
+            )
+        }
 
         menuFor?.let { id ->
             val tile = state.tiles.firstOrNull { it.cameraId == id }
@@ -164,6 +246,10 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
                         viewModel.makePrimary(id, landscape)
                         menuFor = null
                     },
+                    onRemove = {
+                        menuFor = null
+                        removeCamera(id)
+                    },
                     onReconnect = {
                         viewModel.reconnect(id)
                         menuFor = null
@@ -174,6 +260,26 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
     }
 }
 
+/** A camera tile being moved: where it was picked up, where the finger is, and the order it would drop into. */
+private data class TileDrag(
+    val id: String,
+    /** Finger position inside the tile when it was picked up. */
+    val grab: Offset,
+    val size: Size,
+    val pointer: Offset,
+    val startOrder: List<String>,
+    val order: List<String>,
+    val moved: Boolean = false,
+    val overRemove: Boolean = false,
+)
+
+private val TileCorner = RoundedCornerShape(8.dp)
+
+/**
+ * Places the tiles and lets them be rearranged like icons on a home screen: hold a camera until it
+ * lifts, drag it and the others make room, let go to drop it. A "Remove from view" target appears
+ * at the top while a camera is lifted. Holding and letting go without moving opens its menu.
+ */
 @Composable
 private fun TileGrid(
     state: MonitorUiState,
@@ -181,42 +287,255 @@ private fun TileGrid(
     eglContext: EglBase.Context,
     onTap: () -> Unit,
     onDoubleTap: (String) -> Unit,
-    onLongPress: (String) -> Unit,
-    onZoomCommitted: (String, app.nestview.core.model.ZoomWindow) -> Unit,
+    onOpenMenu: (String) -> Unit,
+    onLifted: () -> Unit,
+    onReorder: (List<String>) -> Unit,
+    onRemove: (String) -> Unit,
+    onMoveBy: (String, Int) -> Unit,
+    onZoomCommitted: (String, ZoomWindow) -> Unit,
     onToggleMute: (String) -> Unit,
 ) {
     // Video may run under the status bar area, but not under a camera cutout.
     BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout)) {
         val density = LocalDensity.current
+        val haptics = LocalHapticFeedback.current
         val width = constraints.maxWidth.toFloat()
         val height = constraints.maxHeight.toFloat()
         val spec = if (landscape) state.landscapeLayout else state.portraitLayout
         val gap = with(density) { 3.dp.toPx() }
         val ids = state.tiles.map { it.cameraId }
         val aspects = state.tiles.associate { it.cameraId to it.aspect }
-        val rects = remember(spec, ids, aspects, width, height, state.focusedId, gap) {
-            LayoutEngine.compute(spec, ids, aspects, width, height, gap, state.focusedId)
+
+        var drag by remember { mutableStateOf<TileDrag?>(null) }
+        // After a drop, the new order (or the removal) stays on screen until it's saved, so tiles don't jump back.
+        var settledOrder by remember { mutableStateOf<List<String>?>(null) }
+        var removing by remember { mutableStateOf<String?>(null) }
+        LaunchedEffect(ids) {
+            settledOrder = null
+            removing = null
         }
-        for (tile in state.tiles) {
-            key(tile.cameraId) {
-                val r = rects[tile.cameraId]
-                if (r != null) {
-                    val animated by animateRectAsState(Rect(r.x, r.y, r.x + r.width, r.y + r.height), label = "tile")
-                    VideoTile(
-                        tile = tile,
-                        eglContext = eglContext,
-                        controlsVisible = state.controlsVisible,
-                        onTap = onTap,
-                        onDoubleTap = { onDoubleTap(tile.cameraId) },
-                        onLongPress = { onLongPress(tile.cameraId) },
-                        onZoomCommitted = { onZoomCommitted(tile.cameraId, it) },
-                        onToggleMute = { onToggleMute(tile.cameraId) },
-                        modifier = Modifier
-                            .offset { IntOffset(animated.left.roundToInt(), animated.top.roundToInt()) }
-                            .size(with(density) { animated.width.toDp() }, with(density) { animated.height.toDp() }),
+
+        val shownIds = ids.filter { it != removing }
+        val liveOrder = drag?.order ?: settledOrder?.takeIf { it.toSet() == shownIds.toSet() }
+        val order = liveOrder ?: Rearrange.displayOrder(spec, shownIds)
+        val layoutSpec = if (liveOrder != null) Rearrange.specFor(spec, order) else spec
+        val rects = remember(layoutSpec, order, aspects, width, height, state.focusedId, gap) {
+            LayoutEngine.compute(layoutSpec, order, aspects, width, height, gap, state.focusedId)
+        }
+        val removeZone = with(density) { Rect(width / 2f - 170.dp.toPx(), 0f, width / 2f + 170.dp.toPx(), 96.dp.toPx()) }
+
+        // The gesture coroutine outlives compositions; it reads these through State.
+        val currentRects by rememberUpdatedState(rects)
+        val currentOrder by rememberUpdatedState(order)
+        val layoutFor by rememberUpdatedState { o: List<String> ->
+            LayoutEngine.compute(Rearrange.specFor(spec, o), o, aspects, width, height, gap)
+        }
+        val openMenu by rememberUpdatedState(onOpenMenu)
+        val lifted by rememberUpdatedState(onLifted)
+        val reorder by rememberUpdatedState(onReorder)
+        val removeCallback by rememberUpdatedState(onRemove)
+
+        fun remove(id: String) {
+            removing = id
+            removeCallback(id)
+        }
+
+        fun TileDrag.movedTo(p: Offset): TileDrag {
+            val over = removeZone.contains(p)
+            var next = order
+            if (!over) {
+                // Measured against the layout of the current drag order, not the last drawn frame.
+                val target = Rearrange.tileAt(layoutFor(order), p.x, p.y)
+                if (target != null && target != id) next = Rearrange.moveTo(order, id, target)
+            }
+            if (next != order) haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+            if (over && !overRemove) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+            return copy(pointer = p, moved = true, order = next, overRemove = over)
+        }
+
+        val canArrange = state.focusedId == null
+        val gestures = Modifier.pointerInput(canArrange) {
+            val slop = viewConfiguration.touchSlop
+            awaitEachGesture {
+                // Watches before the tiles do (Initial pass), so it can take over once a camera lifts.
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                val id = Rearrange.tileAt(currentRects, down.position.x, down.position.y, inset = 0f) ?: return@awaitEachGesture
+                var held = true
+                val longPress = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                    while (held) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val change = event.changes.firstOrNull { it.id == down.id }
+                        held = change != null && change.pressed && event.changes.count { it.pressed } == 1 &&
+                            (change.position - down.position).getDistance() <= slop
+                    }
+                } == null
+                if (!longPress) return@awaitEachGesture
+
+                if (!canArrange) {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
+                    openMenu(id)
+                    return@awaitEachGesture
+                }
+                val start = currentRects[id] ?: return@awaitEachGesture
+                drag = TileDrag(
+                    id = id,
+                    grab = down.position - Offset(start.x, start.y),
+                    size = Size(start.width, start.height),
+                    pointer = down.position,
+                    startOrder = currentOrder,
+                    order = currentOrder,
+                )
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                lifted()
+                var released = false
+                try {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        event.changes.forEach { it.consume() }
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) {
+                            released = true
+                            break
+                        }
+                        val d = drag ?: break
+                        if (d.moved || (change.position - down.position).getDistance() > slop) drag = d.movedTo(change.position)
+                    }
+                } finally {
+                    val d = drag
+                    drag = null
+                    if (released && d != null) {
+                        when {
+                            !d.moved -> openMenu(d.id)
+                            d.overRemove -> remove(d.id)
+                            d.order != d.startOrder -> {
+                                settledOrder = d.order
+                                reorder(d.order)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Box(Modifier.fillMaxSize().then(gestures)) {
+            // Where the lifted camera will land.
+            drag?.takeIf { it.moved && !it.overRemove }?.let { d ->
+                rects[d.id]?.let { r ->
+                    Box(
+                        Modifier
+                            .offset { IntOffset(r.x.roundToInt(), r.y.roundToInt()) }
+                            .size(with(density) { r.width.toDp() }, with(density) { r.height.toDp() })
+                            .background(Color.White.copy(alpha = 0.06f), TileCorner)
+                            .border(2.dp, Color.White.copy(alpha = 0.45f), TileCorner),
                     )
                 }
             }
+
+            // Composed in a fixed order, whatever the view's order: moving a tile only changes its
+            // rectangle, so its video surface is never torn down (that would blank the picture).
+            val stableTiles = state.tiles.filter { it.cameraId != removing }.sortedBy { it.cameraId }
+            for (tile in stableTiles) {
+                key(tile.cameraId) {
+                    val r = rects[tile.cameraId]
+                    if (r != null) {
+                        val d = drag?.takeIf { it.id == tile.cameraId }
+                        val target = if (d != null) {
+                            Rect(d.pointer - d.grab, d.size)
+                        } else {
+                            Rect(r.x, r.y, r.x + r.width, r.y + r.height)
+                        }
+                        val animated by animateRectAsState(
+                            target,
+                            animationSpec = if (d != null) snap() else spring(stiffness = Spring.StiffnessMediumLow),
+                            label = "tile",
+                        )
+                        val lift = when {
+                            d == null -> 1f
+                            d.overRemove -> 0.45f
+                            else -> (0.55f * min(width / d.size.width, height / d.size.height)).coerceIn(0.4f, 0.92f)
+                        }
+                        val scale by animateFloatAsState(lift, label = "lift")
+                        var origin by remember { mutableStateOf(TransformOrigin.Center) }
+                        if (d != null) origin = TransformOrigin(d.grab.x / d.size.width, d.grab.y / d.size.height)
+                        val id = tile.cameraId
+                        VideoTile(
+                            tile = tile,
+                            eglContext = eglContext,
+                            controlsVisible = state.controlsVisible && drag == null,
+                            onTap = onTap,
+                            onDoubleTap = { onDoubleTap(id) },
+                            onZoomCommitted = { onZoomCommitted(id, it) },
+                            onToggleMute = { onToggleMute(id) },
+                            modifier = Modifier
+                                .offset { IntOffset(animated.left.roundToInt(), animated.top.roundToInt()) }
+                                .size(with(density) { animated.width.toDp() }, with(density) { animated.height.toDp() })
+                                .zIndex(if (d != null) 1f else 0f)
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                    transformOrigin = origin
+                                    shadowElevation = if (d != null) 24.dp.toPx() else 0f
+                                    shape = TileCorner
+                                    alpha = if (d?.overRemove == true) 0.7f else 1f
+                                }
+                                .then(
+                                    if (d != null) {
+                                        Modifier.border(3.dp, if (d.overRemove) MonitorColors.Problem else Color.White, TileCorner)
+                                    } else {
+                                        Modifier
+                                    },
+                                )
+                                .semantics {
+                                    // Screen readers go through the tiles in their on-screen order.
+                                    traversalIndex = order.indexOf(id).toFloat()
+                                    customActions = listOf(
+                                        CustomAccessibilityAction("Move earlier") { onMoveBy(id, -1); true },
+                                        CustomAccessibilityAction("Move later") { onMoveBy(id, 1); true },
+                                        CustomAccessibilityAction("Remove from view") { remove(id); true },
+                                    )
+                                },
+                        )
+                    }
+                }
+            }
+
+            RemoveTarget(
+                visible = drag != null,
+                active = drag?.overRemove == true,
+                // Above the lifted camera (zIndex 1), so its label stays readable under the finger.
+                modifier = Modifier.align(Alignment.TopCenter).zIndex(2f).padding(top = 16.dp),
+            )
+        }
+    }
+}
+
+/** Where a lifted camera can be dropped to take it off the view. */
+@Composable
+private fun RemoveTarget(visible: Boolean, active: Boolean, modifier: Modifier = Modifier) {
+    AnimatedVisibility(visible = visible, enter = fadeIn() + slideInVertically { -it }, exit = fadeOut(), modifier = modifier) {
+        val scale by animateFloatAsState(if (active) 1.12f else 1f, label = "remove")
+        Row(
+            Modifier
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                }
+                .background(if (active) MonitorColors.Problem else MonitorColors.ScrimStrong, RoundedCornerShape(50))
+                .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(50))
+                .padding(horizontal = 22.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.Close, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                if (active) "Release to remove" else "Remove from view",
+                color = Color.White,
+                style = MaterialTheme.typography.titleSmall,
+            )
         }
     }
 }
@@ -230,6 +549,7 @@ private fun ControlsOverlay(
     onToggleAllMuted: () -> Unit,
     onLayout: (LayoutSpec) -> Unit,
     onUnfocus: () -> Unit,
+    onAddCamera: () -> Unit,
 ) {
     AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -280,6 +600,9 @@ private fun ControlsOverlay(
                     size = 56.dp,
                 )
                 LayoutMenuButton(current = if (landscape) state.landscapeLayout else state.portraitLayout, onLayout = onLayout)
+                if (state.addable.isNotEmpty() && state.focusedId == null) {
+                    OverlayIconButton(Icons.Default.Add, contentDescription = "Add a camera", onClick = onAddCamera, size = 56.dp)
+                }
                 if (state.focusedId != null) {
                     OverlayIconButton(Icons.Default.GridView, contentDescription = "Show all cameras", onClick = onUnfocus, size = 56.dp)
                 }
@@ -317,7 +640,7 @@ private fun LayoutMenuButton(current: LayoutSpec, onLayout: (LayoutSpec) -> Unit
 }
 
 @Composable
-private fun EmptyMonitor(onOpenSettings: () -> Unit) {
+private fun EmptyMonitor(canAdd: Boolean, onAddCamera: () -> Unit, onOpenSettings: () -> Unit) {
     Column(
         Modifier
             .fillMaxSize()
@@ -326,14 +649,23 @@ private fun EmptyMonitor(onOpenSettings: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(Icons.Default.VideocamOff, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(56.dp))
-        Text("No cameras to show", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 16.dp))
+        Text("No cameras on this view", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 16.dp))
         Text(
-            "Choose which cameras appear here in Settings.",
+            if (canAdd) "Add the cameras you want to watch." else "Connect your cameras in Settings.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp),
         )
-        Button(onClick = onOpenSettings, modifier = Modifier.padding(top = 24.dp)) { Text("Open settings") }
+        if (canAdd) {
+            Button(onClick = onAddCamera, modifier = Modifier.padding(top = 24.dp)) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Add cameras")
+            }
+            TextButton(onClick = onOpenSettings, modifier = Modifier.padding(top = 8.dp)) { Text("Settings") }
+        } else {
+            Button(onClick = onOpenSettings, modifier = Modifier.padding(top = 24.dp)) { Text("Open settings") }
+        }
     }
 }
 

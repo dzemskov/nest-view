@@ -85,7 +85,6 @@ internal fun VideoTile(
     controlsVisible: Boolean,
     onTap: () -> Unit,
     onDoubleTap: () -> Unit,
-    onLongPress: () -> Unit,
     onZoomCommitted: (ZoomWindow) -> Unit,
     onToggleMute: () -> Unit,
     modifier: Modifier = Modifier,
@@ -138,8 +137,8 @@ internal fun VideoTile(
                     detectTapGestures(
                         onTap = { onTap() },
                         onDoubleTap = { onDoubleTap() },
-                        onLongPress = { onLongPress() },
-                    )
+                    ) // holding a tile is handled by the grid: it opens the menu or starts a move
+
                 }
                 .pointerInput(tile.cameraId, tile.scaleMode, videoAspect, viewportAspect, viewportW, viewportH) {
                     detectZoomPan(
