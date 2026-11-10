@@ -56,6 +56,7 @@ class MonitorSession @Inject constructor(
     private val background = MutableStateFlow(0)
     private val appForeground = MutableStateFlow(false)
     private val volumePreview = MutableStateFlow<Pair<String, Float>?>(null)
+    private val _keepListening = MutableStateFlow(false)
 
     private val leases = mutableMapOf<String, FeedLease>()
     private val _feeds = MutableStateFlow<Map<String, CameraFeed>>(emptyMap())
@@ -67,7 +68,15 @@ class MonitorSession @Inject constructor(
     val active: StateFlow<Boolean> = combine(screens, appForeground, background) { s, fg, bg -> (s > 0 && fg) || bg > 0 }
         .stateIn(scope, SharingStarted.Eagerly, false)
 
-    val listeningInfo: Flow<ListeningInfo> = repository.state.map { it.listeningInfo() }.distinctUntilChanged()
+    /**
+     * "Keep listening": sound carries on with the screen off or another app in front. Off unless
+     * the user turns it on; it lasts until turned off, stopped from the notification, or the app
+     * is closed for good.
+     */
+    val keepListening: StateFlow<Boolean> = _keepListening.asStateFlow()
+
+    val listeningInfo: Flow<ListeningInfo> = combine(repository.state, _keepListening) { state, keep -> state.listeningInfo(keep) }
+        .distinctUntilChanged()
 
     init {
         scope.launch {
@@ -91,6 +100,10 @@ class MonitorSession @Inject constructor(
                 applyGains(state, feedMap, preview, on)
             }.collect {}
         }
+    }
+
+    fun setKeepListening(on: Boolean) {
+        _keepListening.value = on
     }
 
     /** Called by the monitor screen's view model; streams play while the app is in front. */
@@ -136,11 +149,11 @@ class MonitorSession @Inject constructor(
     }
 }
 
-private fun AppState.listeningInfo(): ListeningInfo {
+private fun AppState.listeningInfo(keepListening: Boolean): ListeningInfo {
     val view = selectedView
     val ids = view?.cameraIds.orEmpty()
     return ListeningInfo(
-        enabled = settings.backgroundListening,
+        enabled = keepListening,
         cameraNames = ids.map { displayName(it) },
         allMuted = view?.audio?.allMuted == true,
         silent = view == null || ids.all { id -> view.audio.gainFor(id, prefsFor(id).volume) == 0f },

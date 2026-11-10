@@ -9,8 +9,11 @@ import kotlinx.serialization.Serializable
 /** App-wide choices that survive switching between demo and real cameras. */
 @Serializable
 data class AppSettings(
-    /** Keep streams and sound running with the screen off or another app in front. */
-    val backgroundListening: Boolean = true,
+    /**
+     * Turn on "Keep listening" (sound with the screen off or another app in front) every time the
+     * monitor opens. Off by default: leaving the monitor usually means it isn't needed any more.
+     */
+    val keepListeningAtStart: Boolean = false,
     /** Android only lets an app ask for notifications a couple of times, so ask once, on purpose. */
     val askedForNotifications: Boolean = false,
 )

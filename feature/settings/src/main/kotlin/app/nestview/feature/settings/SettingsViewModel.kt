@@ -28,7 +28,7 @@ data class CameraRow(
 data class SettingsUiState(
     val cameras: List<CameraRow> = emptyList(),
     val demoMode: Boolean = false,
-    val backgroundListening: Boolean = true,
+    val keepListeningAtStart: Boolean = false,
     val authStatus: AuthStatus = AuthStatus.SIGNED_OUT,
     val projectId: String = "",
     val busy: Boolean = false,
@@ -62,7 +62,7 @@ class SettingsViewModel @Inject constructor(
                 )
             },
             demoMode = app.demoMode,
-            backgroundListening = app.settings.backgroundListening,
+            keepListeningAtStart = app.settings.keepListeningAtStart,
             authStatus = authStatus,
             projectId = config.projectId,
             busy = t.busy,
@@ -80,8 +80,8 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setBackgroundListening(enabled: Boolean) {
-        viewModelScope.launch { repository.updateSettings { it.copy(backgroundListening = enabled) } }
+    fun setKeepListeningAtStart(enabled: Boolean) {
+        viewModelScope.launch { repository.updateSettings { it.copy(keepListeningAtStart = enabled) } }
     }
 
     fun refreshCameras() = runBusy {

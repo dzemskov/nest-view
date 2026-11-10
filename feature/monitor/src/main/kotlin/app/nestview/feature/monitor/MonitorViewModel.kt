@@ -64,7 +64,7 @@ data class MonitorUiState(
     val controlsVisible: Boolean = true,
     val allMuted: Boolean = false,
     val isDemo: Boolean = false,
-    val backgroundListening: Boolean = false,
+    val keepListening: Boolean = false,
     val askedForNotifications: Boolean = true,
     val addable: List<AddableCamera> = emptyList(),
 )
@@ -100,19 +100,25 @@ class MonitorViewModel @Inject constructor(
         }
     }
 
-    private data class Ui(val focused: String?, val zooms: Map<String, ZoomWindow>, val controls: Boolean)
+    private data class Ui(val focused: String?, val zooms: Map<String, ZoomWindow>, val controls: Boolean, val keepListening: Boolean)
 
     val uiState: StateFlow<MonitorUiState> = combine(
         combine(repository.state, feeds, aspects) { s, f, a -> Triple(s, f, a) },
-        combine(focusedId, zooms, controlsVisible) { f, z, c -> Ui(f, z, c) },
+        combine(focusedId, zooms, controlsVisible, session.keepListening) { f, z, c, k -> Ui(f, z, c, k) },
     ) { (state, feedMap, aspectMap), ui -> build(state, feedMap, aspectMap, ui) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, MonitorUiState())
+
+    init {
+        viewModelScope.launch {
+            if (repository.current().settings.keepListeningAtStart) session.setKeepListening(true)
+        }
+    }
 
     private fun build(state: AppState, feedMap: Map<String, CameraFeed>, aspectMap: Map<String, Float>, ui: Ui): MonitorUiState {
         val view = state.selectedView ?: return MonitorUiState(
             loading = false,
             isDemo = state.demoMode,
-            backgroundListening = state.settings.backgroundListening,
+            keepListening = ui.keepListening,
             askedForNotifications = state.settings.askedForNotifications,
             addable = state.addableTo(null),
         )
@@ -144,7 +150,7 @@ class MonitorViewModel @Inject constructor(
             controlsVisible = ui.controls,
             allMuted = view.audio.allMuted,
             isDemo = state.demoMode,
-            backgroundListening = state.settings.backgroundListening,
+            keepListening = ui.keepListening,
             askedForNotifications = state.settings.askedForNotifications,
             addable = state.addableTo(view),
         )
@@ -180,6 +186,13 @@ class MonitorViewModel @Inject constructor(
             repository.updateCameraPrefs(cameraId) { it.copy(volume = volume.coerceIn(0f, AudioMix.MAX_VOLUME)) }
             session.previewVolume(cameraId, null)
         }
+    }
+
+    /** Turns "Keep listening" on or off and returns the new state. */
+    fun toggleKeepListening(): Boolean {
+        val on = !session.keepListening.value
+        session.setKeepListening(on)
+        return on
     }
 
     /** Remembers that the app asked for notifications, so it doesn't ask on every start. */

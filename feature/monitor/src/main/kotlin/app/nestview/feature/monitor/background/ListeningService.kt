@@ -29,9 +29,10 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
- * Keeps the cameras streaming and their sound playing with the screen off or another app in
- * front. Started from the visible monitor (Android only allows that from the foreground) and
- * shown as an ongoing "Listening" notification with Mute and Stop.
+ * "Keep listening": keeps the cameras streaming and their sound playing with the screen off or
+ * another app in front. Started from the visible monitor while Keep listening is on (Android only
+ * allows that from the foreground), shown as an ongoing "Listening" notification with Mute and
+ * Stop, and stopped as soon as Keep listening is turned off.
  */
 @AndroidEntryPoint
 class ListeningService : Service() {
@@ -67,6 +68,7 @@ class ListeningService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                session.setKeepListening(false)
                 stopSelf()
                 return START_NOT_STICKY
             }

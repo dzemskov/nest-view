@@ -107,11 +107,11 @@ fun SettingsScreen(
             }
 
             item { HorizontalDivider(Modifier.widthIn(max = 720.dp)) }
-            item { SectionHeader("Background") }
+            item { SectionHeader("Listening with the screen off") }
             item {
                 BackgroundSection(
-                    enabled = state.backgroundListening,
-                    onEnabledChange = viewModel::setBackgroundListening,
+                    onAtStart = state.keepListeningAtStart,
+                    onAtStartChange = viewModel::setKeepListeningAtStart,
                 )
             }
 
@@ -191,9 +191,12 @@ fun SettingsScreen(
     }
 }
 
-/** The background-listening switch, plus the two Android settings that keep it working overnight. */
+/**
+ * "Keep listening" is switched on the monitor (the ear button). Here: whether it starts on, plus
+ * the two Android settings that keep it working overnight.
+ */
 @Composable
-private fun BackgroundSection(enabled: Boolean, onEnabledChange: (Boolean) -> Unit) {
+private fun BackgroundSection(onAtStart: Boolean, onAtStartChange: (Boolean) -> Unit) {
     val context = LocalContext.current
     var unrestricted by remember { mutableStateOf(true) }
     var notificationsOn by remember { mutableStateOf(true) }
@@ -204,16 +207,21 @@ private fun BackgroundSection(enabled: Boolean, onEnabledChange: (Boolean) -> Un
         onPauseOrDispose { }
     }
     Column(Modifier.widthIn(max = 720.dp)) {
-        ListItem(
-            headlineContent = { Text("Keep listening in the background") },
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            supportingContent = {
-                Text("Sound keeps playing with the screen off or another app open. A notification shows while it listens, with Mute and Stop.")
-            },
-            trailingContent = { Switch(checked = enabled, onCheckedChange = onEnabledChange) },
-            modifier = Modifier.clickable { onEnabledChange(!enabled) },
+        Text(
+            "Sound stops when you turn off the screen or leave the app. To keep hearing the cameras, turn on " +
+                "Keep listening with the ear button on the monitor; a notification with Mute and Stop shows while it's on.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
         )
-        if (enabled && !unrestricted) {
+        ListItem(
+            headlineContent = { Text("Start with Keep listening on") },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            supportingContent = { Text("Turns it on every time the monitor opens.") },
+            trailingContent = { Switch(checked = onAtStart, onCheckedChange = onAtStartChange) },
+            modifier = Modifier.clickable { onAtStartChange(!onAtStart) },
+        )
+        if (!unrestricted) {
             ListItem(
                 headlineContent = { Text("Let it run all night") },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -221,7 +229,7 @@ private fun BackgroundSection(enabled: Boolean, onEnabledChange: (Boolean) -> Un
                 modifier = Modifier.clickable { context.requestUnrestrictedBattery() },
             )
         }
-        if (enabled && !notificationsOn) {
+        if (!notificationsOn) {
             ListItem(
                 headlineContent = { Text("Show the listening notification") },
                 colors = ListItemDefaults.colors(containerColor = Color.Transparent),

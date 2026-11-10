@@ -36,10 +36,11 @@ a tablet on a stand: it opens straight into the cameras and keeps the screen on.
 - **Instant start**: each camera's last snapshot is shown (grey, "Connecting…") until it's live.
 - **Demo mode**: four simulated cameras with sound and occasional crying, to try the app without
   Nest cameras.
-- **Background listening**: sound keeps playing with the screen off or another app open. A
-  "Listening" notification names the cameras and has *Mute all* and *Stop*; opening the app
-  starts listening again. It can be turned off in Settings, which also points to Android's
-  battery setting so it keeps running all night. While the app is hidden, video isn't drawn.
+- **Keep listening** (ear button on the monitor, off by default): sound keeps playing with the
+  screen off or another app open. A "Listening" notification names the cameras and has
+  *Mute all* and *Stop*. Without it, sound stops when you leave the monitor. Settings can turn it
+  on at every start and points to Android's battery setting so it keeps running all night. While
+  the app is hidden, video isn't drawn.
 - **Setup and settings**: Google sign-in through the Nest permissions page, camera discovery,
   rename/hide cameras, sign out.
 

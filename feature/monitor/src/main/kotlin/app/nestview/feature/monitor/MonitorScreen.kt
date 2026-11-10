@@ -17,6 +17,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -147,7 +148,7 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
 
     val hasTiles = state.tiles.isNotEmpty()
     BackgroundListening(
-        enabled = state.backgroundListening && hasTiles,
+        enabled = state.keepListening && hasTiles,
         askForNotifications = !state.askedForNotifications,
         onAskedForNotifications = viewModel::markAskedForNotifications,
     )
@@ -203,6 +204,20 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
             },
             onUnfocus = viewModel::unfocus,
             onAddCamera = { adding = true },
+            onToggleKeepListening = {
+                val on = viewModel.toggleKeepListening()
+                interactions++
+                scope.launch {
+                    snackbar.currentSnackbarData?.dismiss()
+                    snackbar.showSnackbar(
+                        if (on) {
+                            "Keeps listening with the screen off. Stop it here or from the notification."
+                        } else {
+                            "Sound stops when you turn off the screen or leave the app."
+                        },
+                    )
+                }
+            },
         )
 
         SnackbarHost(
@@ -550,6 +565,7 @@ private fun ControlsOverlay(
     onLayout: (LayoutSpec) -> Unit,
     onUnfocus: () -> Unit,
     onAddCamera: () -> Unit,
+    onToggleKeepListening: () -> Unit,
 ) {
     AnimatedVisibility(visible = visible, enter = fadeIn(), exit = fadeOut()) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -597,6 +613,13 @@ private fun ControlsOverlay(
                     contentDescription = if (state.allMuted) "Unmute all" else "Mute all",
                     onClick = onToggleAllMuted,
                     highlighted = state.allMuted,
+                    size = 56.dp,
+                )
+                OverlayIconButton(
+                    icon = Icons.Default.Hearing,
+                    contentDescription = if (state.keepListening) "Stop listening with the screen off" else "Keep listening with the screen off",
+                    onClick = onToggleKeepListening,
+                    highlighted = state.keepListening,
                     size = 56.dp,
                 )
                 LayoutMenuButton(current = if (landscape) state.landscapeLayout else state.portraitLayout, onLayout = onLayout)
@@ -670,8 +693,9 @@ private fun EmptyMonitor(canAdd: Boolean, onAddCamera: () -> Unit, onOpenSetting
 }
 
 /**
- * Starts background listening whenever the monitor is visible (Android allows starting it only
- * from the foreground), and asks once for notifications so its Mute and Stop buttons can show.
+ * While "Keep listening" is on, starts the listening service whenever the monitor is visible
+ * (Android allows starting it only from the foreground), and asks once for notifications so its
+ * Mute and Stop buttons can show.
  */
 @Composable
 private fun BackgroundListening(enabled: Boolean, askForNotifications: Boolean, onAskedForNotifications: () -> Unit) {
