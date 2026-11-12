@@ -1,5 +1,6 @@
 package app.nestview.core.data
 
+import app.nestview.core.model.AlertSettings
 import app.nestview.core.model.AudioMix
 import app.nestview.core.model.CameraInfo
 import app.nestview.core.model.CameraPrefs
@@ -16,6 +17,7 @@ data class AppSettings(
     val keepListeningAtStart: Boolean = false,
     /** Android only lets an app ask for notifications a couple of times, so ask once, on purpose. */
     val askedForNotifications: Boolean = false,
+    val alerts: AlertSettings = AlertSettings(),
 )
 
 /** Everything the app remembers, stored as one JSON document. */

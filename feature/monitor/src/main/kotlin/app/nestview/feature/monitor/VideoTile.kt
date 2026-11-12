@@ -3,6 +3,11 @@ package app.nestview.feature.monitor
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.SystemClock
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -40,11 +45,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
@@ -97,7 +106,8 @@ internal fun VideoTile(
         modifier
             .clip(TileShape)
             .background(TileBackground)
-            .soundGlow({ level.value }),
+            .soundGlow({ level.value })
+            .alertPulse(tile.alerting),
     ) {
         val tileW = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         val tileH = constraints.maxHeight.toFloat().coerceAtLeast(1f)
@@ -244,6 +254,30 @@ private fun Chip(text: String) {
 }
 
 private val Grayscale = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+
+/** A pulsing red frame around a camera that's alerting, drawn over the picture. */
+@Composable
+private fun Modifier.alertPulse(active: Boolean): Modifier {
+    if (!active) return this
+    val transition = rememberInfiniteTransition(label = "alert")
+    val alpha by transition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
+        label = "alertAlpha",
+    )
+    return drawWithContent {
+        drawContent()
+        val stroke = 5.dp.toPx()
+        drawRoundRect(
+            color = MonitorColors.Problem.copy(alpha = alpha),
+            topLeft = Offset(stroke / 2, stroke / 2),
+            size = Size(size.width - stroke, size.height - stroke),
+            cornerRadius = CornerRadius(8.dp.toPx()),
+            style = Stroke(stroke),
+        )
+    }
+}
 
 /** Covers a picture that isn't live: greyed and blurred last image, status and its age. */
 @Composable

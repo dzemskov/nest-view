@@ -18,6 +18,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import app.nestview.feature.monitor.R
+import app.nestview.feature.monitor.alerts.AlertCoordinator
 import app.nestview.feature.monitor.session.ListeningInfo
 import app.nestview.feature.monitor.session.MonitorSession
 import dagger.hilt.android.AndroidEntryPoint
@@ -38,6 +39,8 @@ import javax.inject.Inject
 class ListeningService : Service() {
 
     @Inject lateinit var session: MonitorSession
+
+    @Inject lateinit var alerts: AlertCoordinator
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var hold: AutoCloseable? = null
@@ -73,6 +76,8 @@ class ListeningService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_TOGGLE_MUTE -> scope.launch { session.toggleAllMuted() }
+            ACTION_DISMISS_ALERT -> intent.getStringExtra(EXTRA_ALERT_KEY)?.let(alerts::dismiss)
+            ACTION_SNOOZE_ALERT -> intent.getStringExtra(EXTRA_CAMERA_ID)?.let(alerts::snooze)
         }
         // Every startForegroundService() call must be answered with startForeground().
         goForeground()
@@ -162,6 +167,10 @@ class ListeningService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val ACTION_STOP = "app.nestview.action.STOP_LISTENING"
         private const val ACTION_TOGGLE_MUTE = "app.nestview.action.TOGGLE_MUTE"
+        internal const val ACTION_DISMISS_ALERT = "app.nestview.action.DISMISS_ALERT"
+        internal const val ACTION_SNOOZE_ALERT = "app.nestview.action.SNOOZE_ALERT"
+        internal const val EXTRA_ALERT_KEY = "app.nestview.extra.ALERT_KEY"
+        internal const val EXTRA_CAMERA_ID = "app.nestview.extra.CAMERA_ID"
 
         /** Starts listening in the background. Call while the app is visible. */
         fun start(context: Context) {

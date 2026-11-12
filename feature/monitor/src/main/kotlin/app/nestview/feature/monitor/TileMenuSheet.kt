@@ -1,11 +1,14 @@
 package app.nestview.feature.monitor
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -22,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -32,11 +36,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.nestview.core.designsystem.MonitorColors
 import app.nestview.core.designsystem.StatusPill
 import app.nestview.core.model.AudioMix
 import app.nestview.core.model.ScaleMode
+import app.nestview.core.model.SoundAlertPrefs
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,6 +64,7 @@ internal fun TileMenuSheet(
     onForgetPinnedZoom: () -> Unit,
     onMakePrimary: () -> Unit,
     onRemove: () -> Unit,
+    onSoundAlert: (SoundAlertPrefs) -> Unit,
     onReconnect: () -> Unit,
 ) {
     val health by tile.feed.health.collectAsStateWithLifecycle()
@@ -109,6 +120,9 @@ internal fun TileMenuSheet(
             )
 
             HorizontalDivider()
+            SoundAlertSection(tile = tile, onChange = onSoundAlert)
+
+            HorizontalDivider()
             SectionTitle("Picture")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = tile.scaleMode == ScaleMode.FIT, onClick = { onScaleMode(ScaleMode.FIT) }, label = { Text("Whole picture") })
@@ -157,6 +171,79 @@ internal fun TileMenuSheet(
         }
     }
 }
+
+/**
+ * Turns this camera's sound alert on and sets its line. The slider's track is a live level bar,
+ * so the line can be put just above the room's current noise.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun SoundAlertSection(tile: TileState, onChange: (SoundAlertPrefs) -> Unit) {
+    val prefs = tile.soundAlert
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            SectionTitle("Sound alert")
+            Text(
+                if (prefs.enabled) "Alerts you when there's sound above the line." else "Off. Turn on to be alerted to crying or other sound, even when muted.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = prefs.enabled, onCheckedChange = { onChange(prefs.copy(enabled = it)) })
+    }
+    if (!prefs.enabled) return
+
+    val level by tile.feed.audioLevel.collectAsStateWithLifecycle()
+    var line by remember(tile.cameraId) { mutableFloatStateOf(prefs.thresholdDb) }
+    val now = level.aboveFloorDb
+    Slider(
+        value = line,
+        onValueChange = { line = it.coerceIn(SoundAlertPrefs.MIN_THRESHOLD_DB, SoundAlertPrefs.MAX_THRESHOLD_DB) },
+        onValueChangeFinished = { onChange(prefs.copy(thresholdDb = line.roundToInt().toFloat())) },
+        valueRange = 0f..METER_MAX_DB,
+        track = { LevelTrack(levelFraction = now / METER_MAX_DB, lineFraction = line / METER_MAX_DB) },
+    )
+    Text(
+        "Now ${now.roundToInt()} dB above the room's usual noise · alert above ${line.roundToInt()} dB. " +
+            "Make some noise near the camera to see where it lands.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text("Lasting at least", style = MaterialTheme.typography.bodyMedium)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        SoundAlertPrefs.SUSTAIN_CHOICES.forEach { seconds ->
+            FilterChip(
+                selected = prefs.sustainSeconds == seconds,
+                onClick = { onChange(prefs.copy(sustainSeconds = seconds)) },
+                label = { Text("$seconds s") },
+            )
+        }
+    }
+}
+
+/** The live sound level (green, red once above the line), with the zone above the line tinted. */
+@Composable
+private fun LevelTrack(levelFraction: Float, lineFraction: Float) {
+    val above = levelFraction >= lineFraction
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(14.dp),
+    ) {
+        val radius = CornerRadius(size.height / 2)
+        drawRoundRect(Color.White.copy(alpha = 0.12f), cornerRadius = radius)
+        val lineX = size.width * lineFraction.coerceIn(0f, 1f)
+        drawRect(MonitorColors.Problem.copy(alpha = 0.2f), topLeft = Offset(lineX, 0f), size = Size(size.width - lineX, size.height))
+        drawRoundRect(
+            color = if (above) MonitorColors.Problem else MonitorColors.Live,
+            size = Size(size.width * levelFraction.coerceIn(0f, 1f), size.height),
+            cornerRadius = radius,
+        )
+    }
+}
+
+/** The level bar's full scale, in dB above the room's usual noise. */
+private const val METER_MAX_DB = 36f
 
 @Composable
 private fun SectionTitle(text: String) {

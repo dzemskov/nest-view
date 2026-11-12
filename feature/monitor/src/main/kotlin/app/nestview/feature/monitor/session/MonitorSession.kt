@@ -54,7 +54,8 @@ class MonitorSession @Inject constructor(
 
     private val screens = MutableStateFlow(0)
     private val background = MutableStateFlow(0)
-    private val appForeground = MutableStateFlow(false)
+    private val _appForeground = MutableStateFlow(false)
+    private val alertAudible = MutableStateFlow<Set<String>>(emptySet())
     private val volumePreview = MutableStateFlow<Pair<String, Float>?>(null)
     private val _keepListening = MutableStateFlow(false)
 
@@ -65,7 +66,7 @@ class MonitorSession @Inject constructor(
     val feeds: StateFlow<Map<String, CameraFeed>> = _feeds.asStateFlow()
 
     /** True while the cameras should stream and play. */
-    val active: StateFlow<Boolean> = combine(screens, appForeground, background) { s, fg, bg -> (s > 0 && fg) || bg > 0 }
+    val active: StateFlow<Boolean> = combine(screens, _appForeground, background) { s, fg, bg -> (s > 0 && fg) || bg > 0 }
         .stateIn(scope, SharingStarted.Eagerly, false)
 
     /**
@@ -82,11 +83,11 @@ class MonitorSession @Inject constructor(
         scope.launch {
             ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
                 override fun onStart(owner: LifecycleOwner) {
-                    appForeground.value = true
+                    _appForeground.value = true
                 }
 
                 override fun onStop(owner: LifecycleOwner) {
-                    appForeground.value = false
+                    _appForeground.value = false
                 }
             })
         }
@@ -96,10 +97,18 @@ class MonitorSession @Inject constructor(
             }.collect { syncLeases(it) }
         }
         scope.launch {
-            combine(repository.state, _feeds, volumePreview, active) { state, feedMap, preview, on ->
-                applyGains(state, feedMap, preview, on)
+            combine(repository.state, _feeds, volumePreview, active, alertAudible) { state, feedMap, preview, on, alerting ->
+                applyGains(state, feedMap, preview, on, alerting)
             }.collect {}
         }
+    }
+
+    /** Whether the app is in front (alerts show on screen) or hidden (alerts become notifications). */
+    val appForeground: StateFlow<Boolean> = _appForeground.asStateFlow()
+
+    /** Cameras whose sound plays even if muted, because they're alerting. */
+    fun setAlertAudible(cameraIds: Set<String>) {
+        alertAudible.value = cameraIds
     }
 
     fun setKeepListening(on: Boolean) {
@@ -135,14 +144,21 @@ class MonitorSession @Inject constructor(
         _feeds.value = ids.associateWith { leases.getValue(it).feed }
     }
 
-    private fun applyGains(state: AppState, feedMap: Map<String, CameraFeed>, preview: Pair<String, Float>?, on: Boolean) {
+    private fun applyGains(
+        state: AppState,
+        feedMap: Map<String, CameraFeed>,
+        preview: Pair<String, Float>?,
+        on: Boolean,
+        alerting: Set<String>,
+    ) {
         val view = state.selectedView
         for ((id, feed) in feedMap) {
             val gain = if (!on || view == null || id !in view.cameraIds) {
                 0f
             } else {
                 val volume = if (preview?.first == id) preview.second else state.prefsFor(id).volume
-                view.audio.gainFor(id, volume)
+                // An alerting camera is heard even when muted (at least at normal volume).
+                if (id in alerting) volume.coerceAtLeast(1f) else view.audio.gainFor(id, volume)
             }
             feed.setAudioGain(gain)
         }

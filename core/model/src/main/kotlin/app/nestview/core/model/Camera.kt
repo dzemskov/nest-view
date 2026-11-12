@@ -37,6 +37,7 @@ data class CameraPrefs(
     val scaleMode: ScaleMode = ScaleMode.FIT,
     /** A saved crop (e.g. "crib view") restored every time the camera is shown. */
     val pinnedZoom: ZoomWindow? = null,
+    val soundAlert: SoundAlertPrefs = SoundAlertPrefs(),
 )
 
 @Serializable

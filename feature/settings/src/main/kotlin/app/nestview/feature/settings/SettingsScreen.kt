@@ -49,6 +49,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.nestview.core.model.AlertSettings
 import app.nestview.core.sdm.auth.AuthStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,6 +106,10 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            item { HorizontalDivider(Modifier.widthIn(max = 720.dp)) }
+            item { SectionHeader("Alerts") }
+            item { AlertsSection(state.alerts, viewModel::updateAlerts) }
 
             item { HorizontalDivider(Modifier.widthIn(max = 720.dp)) }
             item { SectionHeader("Listening with the screen off") }
@@ -189,6 +194,64 @@ fun SettingsScreen(
             dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
         )
     }
+}
+
+/**
+ * Safety alarms (on by default) and what alerts do. Sound alerts are set per camera in its menu on
+ * the monitor, next to its live sound level.
+ */
+@Composable
+private fun AlertsSection(alerts: AlertSettings, onChange: ((AlertSettings) -> AlertSettings) -> Unit) {
+    Column(Modifier.widthIn(max = 720.dp)) {
+        Text(
+            "Sound alerts are set for each camera: hold its picture on the monitor to open its menu. " +
+                "Safety alarms below sound even when every camera is muted, and repeat until dismissed.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        SwitchRow(
+            title = "Camera not streaming",
+            detail = "A camera has shown no live picture for ${alerts.cameraLostAfterSeconds} seconds.",
+            checked = alerts.cameraLost,
+            onChange = { on -> onChange { it.copy(cameraLost = on) } },
+        )
+        SwitchRow(
+            title = "No internet connection",
+            detail = "This device lost its connection, so no camera can be watched.",
+            checked = alerts.offline,
+            onChange = { on -> onChange { it.copy(offline = on) } },
+        )
+        SwitchRow(
+            title = "Battery low",
+            detail = "This device is below 15 % and not charging.",
+            checked = alerts.lowBattery,
+            onChange = { on -> onChange { it.copy(lowBattery = on) } },
+        )
+        SwitchRow(
+            title = "Play an alerting camera's sound",
+            detail = "Even if it's muted, until you dismiss the alert.",
+            checked = alerts.unmuteOnAlert,
+            onChange = { on -> onChange { it.copy(unmuteOnAlert = on) } },
+        )
+        SwitchRow(
+            title = "Vibrate",
+            detail = "With the app open. In the background, Android's notification settings decide.",
+            checked = alerts.vibrate,
+            onChange = { on -> onChange { it.copy(vibrate = on) } },
+        )
+    }
+}
+
+@Composable
+private fun SwitchRow(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    ListItem(
+        headlineContent = { Text(title) },
+        supportingContent = { Text(detail) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = onChange) },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+        modifier = Modifier.clickable { onChange(!checked) },
+    )
 }
 
 /**

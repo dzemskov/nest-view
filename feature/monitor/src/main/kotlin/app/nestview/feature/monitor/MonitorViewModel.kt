@@ -5,15 +5,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.nestview.core.data.AppState
 import app.nestview.core.data.MonitorRepository
+import app.nestview.core.model.ActiveAlert
 import app.nestview.core.model.AudioMix
 import app.nestview.core.model.LayoutSpec
 import app.nestview.core.model.ScaleMode
+import app.nestview.core.model.SoundAlertPrefs
 import app.nestview.core.model.VideoSize
 import app.nestview.core.model.ZoomWindow
 import app.nestview.core.model.MonitorView
 import app.nestview.core.streaming.CameraFeed
 import app.nestview.core.streaming.LastFrameCache
 import app.nestview.core.streaming.StreamingEngine
+import app.nestview.feature.monitor.alerts.AlertCoordinator
 import app.nestview.feature.monitor.layout.Rearrange
 import app.nestview.feature.monitor.session.MonitorSession
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -24,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -45,6 +49,9 @@ data class TileState(
     val zoom: ZoomWindow,
     val pinnedZoom: ZoomWindow?,
     val aspect: Float,
+    val soundAlert: SoundAlertPrefs = SoundAlertPrefs(),
+    /** An alert about this camera is showing: the tile pulses red. */
+    val alerting: Boolean = false,
 )
 
 /** A known camera that isn't on the current view, offered by "Add camera". */
@@ -67,6 +74,7 @@ data class MonitorUiState(
     val keepListening: Boolean = false,
     val askedForNotifications: Boolean = true,
     val addable: List<AddableCamera> = emptyList(),
+    val alerts: List<ActiveAlert> = emptyList(),
 )
 
 /**
@@ -79,6 +87,7 @@ class MonitorViewModel @Inject constructor(
     private val repository: MonitorRepository,
     private val session: MonitorSession,
     private val frameCache: LastFrameCache,
+    private val alertCoordinator: AlertCoordinator,
     engine: StreamingEngine,
 ) : ViewModel() {
 
@@ -105,22 +114,38 @@ class MonitorViewModel @Inject constructor(
     val uiState: StateFlow<MonitorUiState> = combine(
         combine(repository.state, feeds, aspects) { s, f, a -> Triple(s, f, a) },
         combine(focusedId, zooms, controlsVisible, session.keepListening) { f, z, c, k -> Ui(f, z, c, k) },
-    ) { (state, feedMap, aspectMap), ui -> build(state, feedMap, aspectMap, ui) }
+        alertCoordinator.alerts,
+    ) { (state, feedMap, aspectMap), ui, alerts -> build(state, feedMap, aspectMap, ui, alerts) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, MonitorUiState())
 
     init {
         viewModelScope.launch {
             if (repository.current().settings.keepListeningAtStart) session.setKeepListening(true)
         }
+        // A tapped alert notification opens its camera full screen.
+        viewModelScope.launch {
+            alertCoordinator.focusRequest.filterNotNull().collect { id ->
+                focusedId.value = id
+                alertCoordinator.consumeFocusRequest()
+            }
+        }
     }
 
-    private fun build(state: AppState, feedMap: Map<String, CameraFeed>, aspectMap: Map<String, Float>, ui: Ui): MonitorUiState {
+    private fun build(
+        state: AppState,
+        feedMap: Map<String, CameraFeed>,
+        aspectMap: Map<String, Float>,
+        ui: Ui,
+        alerts: List<ActiveAlert>,
+    ): MonitorUiState {
+        val alertingIds = alerts.mapNotNull { it.cameraId }.toSet()
         val view = state.selectedView ?: return MonitorUiState(
             loading = false,
             isDemo = state.demoMode,
             keepListening = ui.keepListening,
             askedForNotifications = state.settings.askedForNotifications,
             addable = state.addableTo(null),
+            alerts = alerts,
         )
         val tiles = view.cameraIds.mapNotNull { id ->
             val feed = feedMap[id] ?: return@mapNotNull null
@@ -136,6 +161,8 @@ class MonitorViewModel @Inject constructor(
                 zoom = ui.zooms[id] ?: prefs.pinnedZoom ?: ZoomWindow.None,
                 pinnedZoom = prefs.pinnedZoom,
                 aspect = aspectMap[id] ?: VideoSize.DEFAULT_ASPECT,
+                soundAlert = prefs.soundAlert,
+                alerting = id in alertingIds,
             )
         }
         return MonitorUiState(
@@ -153,6 +180,7 @@ class MonitorViewModel @Inject constructor(
             keepListening = ui.keepListening,
             askedForNotifications = state.settings.askedForNotifications,
             addable = state.addableTo(view),
+            alerts = alerts,
         )
     }
 
@@ -170,6 +198,19 @@ class MonitorViewModel @Inject constructor(
 
     fun unfocus() {
         focusedId.value = null
+    }
+
+    /** "Show" on an alert: that camera full screen. */
+    fun showCamera(cameraId: String) {
+        focusedId.value = cameraId
+    }
+
+    fun dismissAlert(key: String) = alertCoordinator.dismiss(key)
+
+    fun snoozeAlert(cameraId: String) = alertCoordinator.snooze(cameraId)
+
+    fun setSoundAlert(cameraId: String, prefs: SoundAlertPrefs) {
+        viewModelScope.launch { repository.updateCameraPrefs(cameraId) { it.copy(soundAlert = prefs) } }
     }
 
     fun toggleMute(cameraId: String) = editAudio { mix, ids -> mix.toggleMute(cameraId, ids) }

@@ -220,6 +220,18 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
             },
         )
 
+        AlertBanner(
+            alerts = state.alerts,
+            focusedId = state.focusedId,
+            onShow = viewModel::showCamera,
+            onSnooze = viewModel::snoozeAlert,
+            onDismiss = viewModel::dismissAlert,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(top = if (state.controlsVisible && hasTiles) 72.dp else 8.dp),
+        )
+
         SnackbarHost(
             snackbar,
             modifier = Modifier
@@ -265,6 +277,7 @@ fun MonitorScreen(onOpenSettings: () -> Unit, viewModel: MonitorViewModel = hilt
                         menuFor = null
                         removeCamera(id)
                     },
+                    onSoundAlert = { viewModel.setSoundAlert(id, it) },
                     onReconnect = {
                         viewModel.reconnect(id)
                         menuFor = null

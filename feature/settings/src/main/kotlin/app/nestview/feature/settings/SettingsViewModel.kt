@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.nestview.core.data.CameraRepository
 import app.nestview.core.data.MonitorRepository
+import app.nestview.core.model.AlertSettings
 import app.nestview.core.sdm.SdmConfigRepository
 import app.nestview.core.sdm.auth.AuthManager
 import app.nestview.core.sdm.auth.AuthStatus
@@ -29,6 +30,7 @@ data class SettingsUiState(
     val cameras: List<CameraRow> = emptyList(),
     val demoMode: Boolean = false,
     val keepListeningAtStart: Boolean = false,
+    val alerts: AlertSettings = AlertSettings(),
     val authStatus: AuthStatus = AuthStatus.SIGNED_OUT,
     val projectId: String = "",
     val busy: Boolean = false,
@@ -63,6 +65,7 @@ class SettingsViewModel @Inject constructor(
             },
             demoMode = app.demoMode,
             keepListeningAtStart = app.settings.keepListeningAtStart,
+            alerts = app.settings.alerts,
             authStatus = authStatus,
             projectId = config.projectId,
             busy = t.busy,
@@ -78,6 +81,10 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             repository.updateCameraPrefs(cameraId) { it.copy(nickname = nickname.trim().ifBlank { null }) }
         }
+    }
+
+    fun updateAlerts(transform: (AlertSettings) -> AlertSettings) {
+        viewModelScope.launch { repository.updateSettings { it.copy(alerts = transform(it.alerts)) } }
     }
 
     fun setKeepListeningAtStart(enabled: Boolean) {

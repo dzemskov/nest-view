@@ -1,5 +1,6 @@
 package app.nestview
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -28,6 +29,7 @@ import app.nestview.core.designsystem.NestViewTheme
 import app.nestview.core.sdm.auth.AuthManager
 import app.nestview.core.sdm.auth.AuthStatus
 import app.nestview.feature.monitor.MonitorScreen
+import app.nestview.feature.monitor.alerts.AlertCoordinator
 import app.nestview.feature.settings.SettingsScreen
 import app.nestview.feature.setup.SetupScreen
 import dagger.hilt.android.AndroidEntryPoint
@@ -41,6 +43,8 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject lateinit var alerts: AlertCoordinator
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
@@ -54,6 +58,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        if (savedInstanceState == null) handleAlertTap(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleAlertTap(intent)
+    }
+
+    /** An alert notification was tapped: show that camera full screen. */
+    private fun handleAlertTap(intent: Intent?) {
+        intent?.getStringExtra(AlertCoordinator.EXTRA_FOCUS_CAMERA)?.let(alerts::requestFocus)
     }
 }
 
